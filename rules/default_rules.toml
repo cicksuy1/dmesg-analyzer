@@ -1,0 +1,19 @@
+[error]
+keywords = ["error", "fail", "unable"]
+color = "red"
+icon = "❌"
+
+[warning]
+keywords = ["warn", "deprecated", "overcurrent"]
+color = "yellow"
+icon = "⚠️"
+
+[critical]
+keywords = ["panic", "segfault", "oops"]
+color = "bold red"
+icon = "🔥"
+
+[info]
+keywords = ["usb", "initialized", "found"]
+color = "green"
+icon = "ℹ️"
