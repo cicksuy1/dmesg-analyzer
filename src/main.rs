@@ -7,20 +7,30 @@ use inquire::Select;
 use parser::parse_log;
 use rules::load_rules;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use tempfile::NamedTempFile;
 
 #[derive(Parser)]
-#[command(name = "dmesg-analyzer")]
-#[command(about = "Highlight and summarize dmesg logs with colors and rules", long_about = None)]
+#[command(
+    name = "dmesg-analyzer",
+    version = "0.1.0",
+    author = "Ben <you@example.com>",
+    about = "Highlight and summarize dmesg logs with colors and rules",
+    long_about = "Reads kernel logs from dmesg or from a provided file and allows viewing categorized logs interactively."
+)]
 struct Cli {
-    /// Path to the dmesg log file (optional)
-    #[arg(short = 'f', long)]
+    /// Analyze a dmesg log file instead of reading the current kernel log
+    #[arg(short = 'f', long = "file", value_name = "FILE")]
     file: Option<String>,
 
     /// Path to the rule file (TOML format)
-    #[arg(short, long, default_value = "rules/default_rules.toml")]
+    #[arg(
+        short = 'r',
+        long = "rules",
+        value_name = "RULES",
+        default_value = "rules/default_rules.toml"
+    )]
     rules: String,
 }
 
