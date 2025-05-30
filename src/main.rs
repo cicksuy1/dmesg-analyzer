@@ -1,4 +1,3 @@
-// src/main.rs
 mod formatter;
 mod parser;
 mod rules;
@@ -7,16 +6,18 @@ use clap::Parser;
 use inquire::Select;
 use parser::parse_log;
 use rules::load_rules;
-use std::io::{self, BufRead, Write};
+use std::fs::File;
+use std::io::{self, BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
+use tempfile::NamedTempFile;
 
 #[derive(Parser)]
 #[command(name = "dmesg-analyzer")]
 #[command(about = "Highlight and summarize dmesg logs with colors and rules", long_about = None)]
 struct Cli {
-    /// Path to the dmesg log file (use "-" for stdin)
-    #[arg(short, long)]
-    file: String,
+    /// Path to the dmesg log file (optional)
+    #[arg(short = 'f', long)]
+    file: Option<String>,
 
     /// Path to the rule file (TOML format)
     #[arg(short, long, default_value = "rules/default_rules.toml")]
@@ -27,92 +28,123 @@ fn main() {
     let cli = Cli::parse();
     let rules_path = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), cli.rules);
     eprintln!("Using rules from: {}", rules_path);
-
     let rules = load_rules(&rules_path);
 
-    let input: Box<dyn BufRead> = if cli.file == "-" {
-        Box::new(io::BufReader::new(io::stdin()))
-    } else {
-        let file = std::fs::File::open(&cli.file).expect("Failed to open log file");
-        Box::new(io::BufReader::new(file))
+    // Step 1: Open dmesg source (file or live)
+    let input: Box<dyn BufRead> = match cli.file {
+        Some(ref path) => {
+            let file = File::open(path).expect("Failed to open log file");
+            Box::new(BufReader::new(file))
+        }
+        None => {
+            let mut tmpfile = NamedTempFile::new().expect("Failed to create temporary file");
+
+            {
+                let mut file_handle = tmpfile.as_file_mut();
+                let mut child = Command::new("dmesg")
+                    .stdout(Stdio::from(
+                        file_handle
+                            .try_clone()
+                            .expect("Failed to clone temp file handle"),
+                    ))
+                    .spawn()
+                    .expect("Failed to run dmesg");
+
+                let status = child.wait().expect("Failed to wait on dmesg");
+                if !status.success() {
+                    panic!("dmesg failed with status: {}", status);
+                }
+            }
+
+            let file = File::open(tmpfile.path()).expect("Failed to reopen dmesg temp file");
+            Box::new(BufReader::new(file))
+        }
     };
 
+    // Step 2: Parse lines into buckets
     let mut critical_lines = Vec::new();
     let mut error_lines = Vec::new();
     let mut warning_lines = Vec::new();
     let mut info_lines = Vec::new();
 
-    for line in input.lines() {
-        if let Ok(text) = line {
-            if let Some(formatted) = parse_log(&text, &rules) {
-                let lower = text.to_lowercase();
-                if lower.contains("panic") || lower.contains("oops") {
-                    critical_lines.push(formatted);
-                } else if lower.contains("error") || lower.contains("fail") {
-                    error_lines.push(formatted);
-                } else if lower.contains("warn") {
-                    warning_lines.push(formatted);
-                } else {
-                    info_lines.push(formatted);
-                }
+    for line in input.lines().flatten() {
+        if let Some(formatted) = parse_log(&line, &rules) {
+            let lower = line.to_lowercase();
+            if lower.contains("panic") || lower.contains("oops") {
+                critical_lines.push(formatted);
+            } else if lower.contains("error") || lower.contains("fail") {
+                error_lines.push(formatted);
+            } else if lower.contains("warn") {
+                warning_lines.push(formatted);
             } else {
-                info_lines.push(text); // Unmatched, assume info
+                info_lines.push(formatted);
             }
+        } else {
+            info_lines.push(line); // unmatched line
         }
     }
 
+    // Step 3: Show selection menu
     loop {
-        println!("\n✔ Choose a section to view:\n");
-        let options = vec![
-            format!("🔥 Criticals ({})", critical_lines.len()),
-            format!("❌ Errors ({})", error_lines.len()),
-            format!("⚠️  Warnings ({})", warning_lines.len()),
-            format!("ℹ️  Ok ({})", info_lines.len()),
-            "🚪 Exit".to_string(),
-        ];
+        display_menu(&critical_lines, &error_lines, &warning_lines, &info_lines);
+    }
+}
 
-        let selection = Select::new("Section:", options.clone())
-            .with_help_message("Use arrows ↑↓ and press Enter. Press Esc to quit.")
-            .prompt();
+fn display_menu(
+    critical_lines: &[String],
+    error_lines: &[String],
+    warning_lines: &[String],
+    info_lines: &[String],
+) {
+    println!("\n✔ Choose a section to view:\n");
+    let options = vec![
+        format!("🔥 Criticals ({})", critical_lines.len()),
+        format!("❌ Errors ({})", error_lines.len()),
+        format!("⚠️  Warnings ({})", warning_lines.len()),
+        format!("ℹ️  Ok ({})", info_lines.len()),
+        "🚪 Exit".to_string(),
+    ];
 
-        match selection {
-            Ok(choice) => {
-                let output = match choice.as_str() {
-                    c if c.starts_with("🔥") => &critical_lines,
-                    c if c.starts_with("❌") => &error_lines,
-                    c if c.starts_with("⚠️") => &warning_lines,
-                    c if c.starts_with("ℹ️") => &info_lines,
-                    c if c.starts_with("🚪") => {
-                        println!("Exiting...");
-                        break;
-                    }
-                    _ => {
-                        println!("Invalid selection.");
-                        continue;
-                    }
-                };
+    let selection = Select::new("Section:", options.clone())
+        .with_help_message("Use arrows ↑↓ and press Enter. Press Esc to quit.")
+        .prompt();
 
-                let content = output.join("\n");
-
-                // Spawn 'less' as a subprocess
-                let mut pager = Command::new("less")
-                    .arg("-R") // supports ANSI color
-                    .stdin(Stdio::piped())
-                    .spawn()
-                    .expect("Failed to launch pager");
-
-                if let Some(stdin) = pager.stdin.as_mut() {
-                    stdin
-                        .write_all(content.as_bytes())
-                        .expect("Failed to write to pager");
+    match selection {
+        Ok(choice) => {
+            let output = match choice.as_str() {
+                c if c.starts_with("🔥") => critical_lines,
+                c if c.starts_with("❌") => error_lines,
+                c if c.starts_with("⚠️") => warning_lines,
+                c if c.starts_with("ℹ️") => info_lines,
+                c if c.starts_with("🚪") => {
+                    println!("Exiting...");
+                    std::process::exit(0);
                 }
+                _ => {
+                    println!("Invalid selection.");
+                    return;
+                }
+            };
 
-                pager.wait().expect("Failed to wait on pager");
+            let content = output.join("\n");
+
+            let mut pager = Command::new("less")
+                .arg("-R")
+                .stdin(Stdio::piped())
+                .spawn()
+                .expect("Failed to launch pager");
+
+            if let Some(stdin) = pager.stdin.as_mut() {
+                stdin
+                    .write_all(content.as_bytes())
+                    .expect("Failed to write to pager");
             }
-            Err(_) => {
-                println!("Exited via Esc or input error.");
-                break;
-            }
+
+            pager.wait().expect("Failed to wait on pager");
+        }
+        Err(_) => {
+            println!("Exited via Esc or input error.");
+            std::process::exit(0);
         }
     }
 }
