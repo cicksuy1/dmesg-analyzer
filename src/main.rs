@@ -15,7 +15,7 @@ use tempfile::NamedTempFile;
 #[command(
     name = "dmesg-analyzer",
     version = "0.1.0",
-    author = "Ben <you@example.com>",
+    author = "Ben <benbald21@gmail.com>",
     about = "Highlight and summarize dmesg logs with colors and rules",
     long_about = "Reads kernel logs from dmesg or from a provided file and allows viewing categorized logs interactively."
 )]
