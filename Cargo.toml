@@ -18,6 +18,7 @@ tempfile = "3"
 [package.metadata.deb]
 assets = [
     ["rules/default_rules.toml", "/usr/share/dmesg-analyzer/default_rules.toml", "644"],
+    ["target/release/dmesg-analyzer", "/usr/bin/dmesg-analyzer", "755"],
 ]
 maintainer = "Ben <benbald21@gmail.com>"
 section = "utils"
@@ -34,3 +35,12 @@ assets = [
     { source = "target/release/dmesg-analyzer", dest = "/usr/bin/dmesg-analyzer", mode = "755" },
     { source = "rules/default_rules.toml", dest = "/usr/share/dmesg-analyzer/default_rules.toml", mode = "644" }
 ]
+
+[package.metadata.rpm]
+package = "dmesg-analyzer"
+
+[package.metadata.rpm.cargo]
+buildflags = ["--release"]
+
+[package.metadata.rpm.targets]
+dmesg-analyzer = { path = "/usr/bin/dmesg-analyzer" }

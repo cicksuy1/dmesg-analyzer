@@ -5,13 +5,12 @@ mod rules;
 use clap::Parser;
 use inquire::Select;
 use parser::parse_log;
-use rules::{LogCategory, RuleSet, load_rules_with_fallback}; // הוספתי RuleSet לייבוא
+use rules::{LogCategory, RuleSet, load_rules_with_fallback};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use tempfile::NamedTempFile;
 
-// הנחתי ש-EMBEDDED_DEFAULT_RULES מוגדר כפי שהיה
 const EMBEDDED_DEFAULT_RULES: &str = include_str!("../rules/default_rules.toml");
 
 /// Command-line interface options for dmesg-analyzer.
@@ -43,10 +42,8 @@ fn main() {
     let cli = Cli::parse();
 
     // Load rules from the specified path, XDG config, /usr/share, or fallback to embedded defaults.
-    let (ruleset_instance, rules_source_info) = load_rules_with_fallback(
-        cli.custom_rules_path.as_deref(),
-        EMBEDDED_DEFAULT_RULES,
-    );
+    let (ruleset_instance, rules_source_info) =
+        load_rules_with_fallback(cli.custom_rules_path.as_deref(), EMBEDDED_DEFAULT_RULES);
 
     if cli.custom_rules_path.is_some() {
         println!("Using custom rules from: {}", rules_source_info);
