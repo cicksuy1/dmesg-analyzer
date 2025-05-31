@@ -2,6 +2,9 @@
 name = "dmesg-analyzer"
 version = "0.1.0"
 edition = "2024"
+description = "Highlight and summarize dmesg logs with colors and rules, interactively."
+license = "MIT"
+authors = ["Ben <benbald21@gmail.com>"]
 
 [dependencies]
 colored = "3.0"            # for terminal color output
@@ -11,3 +14,23 @@ clap = { version = "4.5", features = ["derive"] } # for CLI args
 inquire = "0.7.5"
 pager = "0.16"
 tempfile = "3" 
+
+[package.metadata.deb]
+assets = [
+    ["rules/default_rules.toml", "/usr/share/dmesg-analyzer/default_rules.toml", "644"],
+]
+maintainer = "Ben <benbald21@gmail.com>"
+section = "utils"
+priority = "optional"
+depends = "libc6 (>= 2.17)"
+
+
+
+[package.metadata.generate-rpm]
+name = "dmesg-analyzer"
+license = "MIT"
+summary = "Highlight and summarize dmesg logs with colors and rules, interactively."
+assets = [
+    { source = "target/release/dmesg-analyzer", dest = "/usr/bin/dmesg-analyzer", mode = "755" },
+    { source = "rules/default_rules.toml", dest = "/usr/share/dmesg-analyzer/default_rules.toml", mode = "644" }
+]

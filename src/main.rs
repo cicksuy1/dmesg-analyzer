@@ -5,11 +5,13 @@ mod rules;
 use clap::Parser;
 use inquire::Select;
 use parser::parse_log;
-use rules::load_rules;
+use rules::load_rules_with_fallback;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use tempfile::NamedTempFile;
+
+const EMBEDDED_DEFAULT_RULES: &str = include_str!("../rules/default_rules.toml");
 
 #[derive(Parser)]
 #[command(
@@ -24,21 +26,21 @@ struct Cli {
     #[arg(short = 'f', long = "file", value_name = "FILE")]
     file: Option<String>,
 
-    /// Path to the rule file (TOML format)
-    #[arg(
-        short = 'r',
-        long = "rules",
-        value_name = "RULES",
-        default_value = "rules/default_rules.toml"
-    )]
+    /// Path to the rule file (TOML format). If not provided, will search XDG config, /usr/share, or use embedded defaults.
+    #[arg(short = 'r', long = "rules", value_name = "RULES", default_value = "")]
     rules: String,
 }
 
 fn main() {
     let cli = Cli::parse();
-    let rules_path = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), cli.rules);
-    eprintln!("Using rules from: {}", rules_path);
-    let rules = load_rules(&rules_path);
+    let rules = load_rules_with_fallback(
+        if cli.rules.is_empty() {
+            None
+        } else {
+            Some(cli.rules.as_str())
+        },
+        EMBEDDED_DEFAULT_RULES,
+    );
 
     // Step 1: Open dmesg source (file or live)
     let input: Box<dyn BufRead> = match cli.file {
